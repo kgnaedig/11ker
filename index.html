@@ -6,35 +6,11 @@
         <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
         <meta name="mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-capable" content="yes">
-        <link rel="stylesheet" href="./resources/ol.css">
-        <link rel="stylesheet" href="resources/fontawesome-all.min.css">
-        <link href="resources/photon-geocoder-autocomplete.min.css" rel="stylesheet">
-        <link rel="stylesheet" href="./resources/ol-layerswitcher.css">
-        <link rel="stylesheet" href="./resources/qgis2web.css">
-        <style>
-        html, body {
-            background-color: #ffffff;
-        }
-        .ol-control > * {
-            background-color: #f8f8f8!important;
-            color: #444444!important;
-            border-radius: 0px;
-        }
-        .ol-attribution a, .gcd-gl-input::placeholder, .search-layer-input-search::placeholder {
-            color: #444444!important;
-        }
-        .search-layer-input-search {
-            background-color: #f8f8f8!important;
-        }
-        .ol-control > *:focus, .ol-control >*:hover {
-            background-color: rgba(248, 248, 248, 0.7)!important;
-        } 
-        .ol-control {
-            background-color: rgba(255,255,255,.4) !important;
-            padding: 2px !important;
-        } 
-        </style>
-
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <link rel="stylesheet" href="css/leaflet.photon.css">
         <style>
         html, body, #map {
             width: 100%;
@@ -47,20 +23,268 @@
     </head>
     <body>
         <div id="map">
-            <div id="popup" class="ol-popup">
-                <a href="#" id="popup-closer" class="ol-popup-closer"></a>
-                <div id="popup-content"></div>
-            </div>
         </div>
-        <script src="resources/qgis2web_expressions.js"></script>
-        <script src="./resources/functions.js"></script>
-        <script src="./resources/ol.js"></script>
-        <script src="./resources/ol-layerswitcher.js"></script>
-        <script src="resources/photon-geocoder-autocomplete.min.js"></script>
-        <script src="layers/reszekkorvonal_1.js"></script><script src="layers/Extractedlocation_2.js"></script>
-        <script src="styles/reszekkorvonal_1_style.js"></script><script src="styles/Extractedlocation_2_style.js"></script>
-        <script src="./layers/layers.js" type="text/javascript"></script> 
-        <script src="./resources/Autolinker.min.js"></script>
-        <script src="./resources/qgis2web.js"></script>        
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="js/leaflet.photon.js"></script>
+        <script src="data/polygonweblayer_1.js"></script>
+        <script src="data/Extractedrovidfelirat_2.js"></script>
+        <script>
+        var m2px = 1;
+        function newM2px() {
+            var centerLatLng = map.getCenter();
+            var pointC = map.latLngToContainerPoint(centerLatLng);
+            var pointX = [pointC.x + 100, pointC.y];
+
+            var latLngC = map.containerPointToLatLng(pointC);
+            var latLngX = map.containerPointToLatLng(pointX);
+
+            var distanceX = latLngC.distanceTo(latLngX)/100;
+
+            reciprocal = 1 / distanceX;
+            m2px = reciprocal;
+        }
+        function geoStyle(m) {
+            return Math.ceil(m * m2px);
+        }
+        var map = L.map('map', {
+            zoomControl:false, maxZoom:28, minZoom:1
+        }).fitBounds([[47.46374778551814,19.029397882969374],[47.47179348219417,19.047156812062095]]);
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        // remove popup's row if "visible-with-data"
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        // modify popup if contains media
+        function addClassToPopupIfMedia(content, popup) {
+            var tempDiv = document.createElement('div');
+            tempDiv.innerHTML = content;
+            var imgTd = tempDiv.querySelector('td img');
+            if (imgTd) {
+                var src = imgTd.getAttribute('src');
+                if (/\.(jpg|jpeg|png|gif|bmp|webp|avif)$/i.test(src)) {
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.update();
+                    }, 10);
+                } else if (/\.(mp3|wav|ogg|aac)$/i.test(src)) {
+                    var audio = document.createElement('audio');
+                    audio.controls = true;
+                    audio.src = src;
+                    imgTd.parentNode.replaceChild(audio, imgTd);
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else if (/\.(mp4|webm|ogg|mov)$/i.test(src)) {
+                    var video = document.createElement('video');
+                    video.controls = true;
+                    video.src = src;
+                    video.style.width = "400px";
+                    video.style.height = "300px";
+                    video.style.maxHeight = "60vh";
+                    video.style.maxWidth = "60vw";
+                    imgTd.parentNode.replaceChild(video, imgTd);
+                    popup._contentNode.classList.add('media');
+                    // Aggiorna il popup quando il video carica i metadati
+                    video.addEventListener('loadedmetadata', function() {
+                        popup.update();
+                    });
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else {
+                    popup._contentNode.classList.remove('media');
+                }
+            } else {
+                popup._contentNode.classList.remove('media');
+            }
+        }
+        var zoomControl = L.control.zoom({
+            position: 'topleft'
+        }).addTo(map);
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+        }
+        map.createPane('pane_OSMStandard_0');
+        map.getPane('pane_OSMStandard_0').style.zIndex = 400;
+        var layer_OSMStandard_0 = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            pane: 'pane_OSMStandard_0',
+            opacity: 1.0,
+            attribution: '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors, CC-BY-SA</a>',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 19
+        });
+        layer_OSMStandard_0;
+        map.addLayer(layer_OSMStandard_0);
+        function pop_polygonweblayer_1(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['fid'] !== null ? autolinker.link(String(feature.properties['fid']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_polygonweblayer_1_0() {
+            return {
+                pane: 'pane_polygonweblayer_1',
+                opacity: 1,
+                color: 'rgba(84,68,113,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 3.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(190,178,151,0.0)',
+                interactive: false,
+            }
+        }
+        map.createPane('pane_polygonweblayer_1');
+        map.getPane('pane_polygonweblayer_1').style.zIndex = 401;
+        map.getPane('pane_polygonweblayer_1').style['mix-blend-mode'] = 'normal';
+        var layer_polygonweblayer_1 = new L.geoJson(json_polygonweblayer_1, {
+            attribution: '',
+            interactive: false,
+            dataVar: 'json_polygonweblayer_1',
+            layerName: 'layer_polygonweblayer_1',
+            pane: 'pane_polygonweblayer_1',
+            onEachFeature: pop_polygonweblayer_1,
+            style: style_polygonweblayer_1_0,
+        });
+        bounds_group.addLayer(layer_polygonweblayer_1);
+        map.addLayer(layer_polygonweblayer_1);
+        function pop_Extractedrovidfelirat_2(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['lat'] !== null ? autolinker.link(String(feature.properties['lat']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['lon'] !== null ? autolinker.link(String(feature.properties['lon']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['street'] !== null ? autolinker.link(String(feature.properties['street']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['no'] !== null ? autolinker.link(String(feature.properties['no']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['zip'] !== null ? autolinker.link(String(feature.properties['zip']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['city'] !== null ? autolinker.link(String(feature.properties['city']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Column7'] !== null ? autolinker.link(String(feature.properties['Column7']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['web_labels'] !== null ? autolinker.link(String(feature.properties['web_labels']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_Extractedrovidfelirat_2_0() {
+            return {
+                pane: 'pane_Extractedrovidfelirat_2',
+                radius: geoStyle(5.0),
+                opacity: 1,
+                color: 'rgba(35,35,35,0.0)',
+                dashArray: 'null',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: geoStyle(1),
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(217,45,191,1.0)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_Extractedrovidfelirat_2');
+        map.getPane('pane_Extractedrovidfelirat_2').style.zIndex = 402;
+        map.getPane('pane_Extractedrovidfelirat_2').style['mix-blend-mode'] = 'normal';
+        var layer_Extractedrovidfelirat_2 = new L.geoJson(json_Extractedrovidfelirat_2, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_Extractedrovidfelirat_2',
+            layerName: 'layer_Extractedrovidfelirat_2',
+            pane: 'pane_Extractedrovidfelirat_2',
+            onEachFeature: pop_Extractedrovidfelirat_2,
+            pointToLayer: function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.circleMarker(latlng, style_Extractedrovidfelirat_2_0(feature));
+            },
+        });
+        bounds_group.addLayer(layer_Extractedrovidfelirat_2);
+        map.addLayer(layer_Extractedrovidfelirat_2);
+        setBounds();
+        var i = 0;
+        layer_Extractedrovidfelirat_2.eachLayer(function(layer) {
+            var context = {
+                feature: layer.feature,
+                variables: {}
+            };
+            layer.bindTooltip((layer.feature.properties['web_labels'] !== null?String('<div style="color: #000000; font-size: 7pt; font-weight: bold; font-family: \'Open Sans\', sans-serif;">' + layer.feature.properties['web_labels']) + '</div>':''), {permanent: true, offset: [-0, -16], className: 'css_Extractedrovidfelirat_2'});
+            labels.push(layer);
+            totalMarkers += 1;
+              layer.added = true;
+              addLabel(layer, i);
+              i++;
+        });
+        newM2px();
+
+            layer_Extractedrovidfelirat_2.setStyle(style_Extractedrovidfelirat_2_0);
+        map.on("zoomend", function(){
+            newM2px();
+
+            layer_Extractedrovidfelirat_2.setStyle(style_Extractedrovidfelirat_2_0);
+        });
+        resetLabels([layer_Extractedrovidfelirat_2]);
+        map.on("zoomend", function(){
+            resetLabels([layer_Extractedrovidfelirat_2]);
+        });
+        map.on("layeradd", function(){
+            resetLabels([layer_Extractedrovidfelirat_2]);
+        });
+        map.on("layerremove", function(){
+            resetLabels([layer_Extractedrovidfelirat_2]);
+        });
+        </script>        
     </body>
 </html>
